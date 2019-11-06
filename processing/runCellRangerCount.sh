@@ -6,10 +6,12 @@ export PATH=$CELLRANGER_PATH:$PATH
 source $CELLRANGER_PATH/sourceme.bash
 
 # Set up arguments for run
-SAMPLE=H9_RPE_YOUNG_S1
-INPUT_DIR=/share/ScratchGeneral/annsen/data/experimental_data/PUBLISHING/RPE_scRNA/RAW
+SAMPLE=$1
+INPUT_DIR=/share/ScratchGeneral/annsen/data/experimental_data/PUBLISHING/RPE_scRNA
 REF_DIR=/share/ClusterShare/thingamajigs/SCCG/data/reference_data/refdata-cellranger-GRCh38-3.0.0
 OUTPUT_DIR=/share/ScratchGeneral/annsen/data/experimental_data/CLEAN/RPE_scRNA_AgedStudy
+
+cd $OUTPUT_DIR
 
 # Run Cell Ranger
 cellranger count --id=${SAMPLE} --sample=${SAMPLE} --fastqs=${INPUT_DIR} \
