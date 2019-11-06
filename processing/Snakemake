@@ -1,0 +1,14 @@
+samples = ["H9_RPE_YOUNG_S1", "H9_RPE_AGED_S2"]
+
+rule cellranger_count:
+    input:
+        fastq = "/share/ScratchGeneral/annsen/data/experimental_data/PUBLISHING/RPE_scRNA/RAW",
+        ref = "/share/ClusterShare/thingamajigs/SCCG/data/reference_data/refdata-cellranger-GRCh38-3.0.0"
+    output:
+        directory("/share/ScratchGeneral/annsen/data/experimental_data/CLEAN/RPE_scRNA_AgedStudy/{sample}")
+    threads: 16
+    script:
+        """
+            source $CELLRANGER_PATH/sourceme.bash
+            cellranger count --id=${sample} --sample={sample} --fastqs={fastq} --localmem={mem} --localcores={ncores} --transcriptome={input.ref} --expect-cells=10000 --nosecondary
+        """
