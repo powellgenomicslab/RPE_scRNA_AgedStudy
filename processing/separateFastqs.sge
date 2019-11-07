@@ -3,11 +3,14 @@
 # SGE OPTIONS
 #$ -S /bin/bash
 #$ -q short.q
-#$ -N quantify
+#$ -N splitFastq
 #$ -V
 #$ -cwd
 #$ -b n
 #$ -pe smp 2
 #$ -l mem_requested=64G,tmp_requested=150G,tmpfree=150G
 
+INPUT_DIR=/share/ScratchGeneral/annsen/data/experimental_data/PUBLISHING/RPE_scRNA/RAW
+
+cd $INPUT_DIR
 bash $SGE_O_WORKDIR/separateFastqs.sh
