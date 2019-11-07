@@ -1,0 +1,3 @@
+library_id,molecule_h5
+H9_RPE_YOUNG,/share/ScratchGeneral/annsen/data/experimental_data/CLEAN/RPE_scRNA_AgedStudy/H9_RPE_YOUNG/outs/molecule_info.h5
+H9_RPE_AGED,/share/ScratchGeneral/annsen/data/experimental_data/CLEAN/RPE_scRNA_AgedStudy/H9_RPE_AGED/outsmolecule_info.h5
