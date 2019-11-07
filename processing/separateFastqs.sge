@@ -13,4 +13,5 @@
 INPUT_DIR=/share/ScratchGeneral/annsen/data/experimental_data/PUBLISHING/RPE_scRNA/RAW
 
 cd $INPUT_DIR
-bash $SGE_O_WORKDIR/separateFastqs.sh
+bash $SGE_O_WORKDIR/separateFastqs.sh H9_RPE_YOUNG
+bash $SGE_O_WORKDIR/separateFastqs.sh H9_RPE_AGED

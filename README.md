@@ -24,6 +24,19 @@ Data was processed using the 10x Genomics Cell Ranger 3.0.2 pipeline.
 ### Pre-processing of FASTQ.GZ files
 Sequence from four sequencing lanes were combined for submission to ArrayExpress. They need to be separated again in order to be run through the Cell Ranger pipeline. This can be done via the [separateFastqs.sh](processing/separateFastqs.sh) script.
 
+### Processing of raw reads into count matrix
+The [runCellRangerCount.sh](processing/runCellRangerCount.sh) can be used to launch Cell Ranger 3.0.2 directly from command line as follows:
+
+```bash
+bash runCellRangerCount.sh H9_RPE_YOUNG
+bash runCellRangerCount.sh H9_RPE_AGED
+```
+
+The SGE script [runCellRangerCount.sge](processing/runCellRangerCount.sge) can also be used to run the pipeline on SGE Cluster systems.
+
+### Depth-equalization of datasets
+The Cell Ranger 3.0.2 pipeline is used to aggregate and depth-equalize the samples. This can be launched via [runCellRangerAggr.sh](processing/runCellRangerAggr.sh) or [runCellRangerAggr.sge](processing/runCellRangerAggr.sh) for SGE Cluster systems. 
+
 
 
 
