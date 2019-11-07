@@ -10,5 +10,4 @@
 #$ -pe smp 16
 #$ -l mem_requested=8G,tmp_requested=150G,tmpfree=150G
 
-bash ${SGE_O_WORKDIR}/runCellRangerCount.sh H9_RPE_YOUNG
 bash ${SGE_O_WORKDIR}/runCellRangerCount.sh H9_RPE_AGED
