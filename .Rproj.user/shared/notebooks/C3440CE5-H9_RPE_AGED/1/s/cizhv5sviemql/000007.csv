@@ -1,0 +1,4 @@
+"0","metadata <- FetchData(seurat_obj, vars = c(""seurat_clusters"", ""SCT_snn_res.0.7""))"
+"0","res_counts <- as.data.frame(table(metadata$SCT_snn_res.0.7))"
+"0","res_hist <- ggplot(res_counts, aes(x = Var1, y = Freq)) + geom_bar(stat = ""identity"")"
+"0","res_hist"

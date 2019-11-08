@@ -1,0 +1,10 @@
+"0","seurat_obj <- FindNeighbors(seurat_obj, dims = 1:30)"
+"2","Computing nearest neighbor graph
+"
+"2","Computing SNN
+"
+"0","windows <- c(seq(0, 1.5, by = 0.1))"
+"0",""
+"0","for (res in windows){"
+"0","  seurat_obj <- FindClusters(seurat_obj, resolution = res, verbose = FALSE)"
+"0","}"

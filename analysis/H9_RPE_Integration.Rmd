@@ -1,0 +1,230 @@
+---
+title: "H9_RPE Dataset Integration"
+output: html_notebook
+---
+
+## Notebook setup
+```{r packages}
+library(Seurat)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(ggpubr)
+```
+
+
+## Assigning clusters to analysed datasets
+Set control to resolution 0.6 and aged to 0.7.
+
+```{r prepData}
+# Load objects
+control_obj <- readRDS("/Volumes/LACIE/RPE_scRNA/RPE_scRNA_Control_Analysed_Object.rds")
+aged_obj <- readRDS("/Volumes/LACIE/RPE_scRNA/RPE_scRNA_Aged_Analysed_Object.rds")
+
+# Set resolution
+control_obj[["seurat_clusters"]] <- control_obj[["SCT_snn_res.0.6"]]
+Idents(control_obj) <- "seurat_clusters"
+
+aged_obj[["seurat_clusters"]] <- aged_obj[["SCT_snn_res.0.7"]]
+Idents(aged_obj) <- "seurat_clusters"
+
+```
+
+### Cluster sizes
+```{r clusterSizes}
+# Extract cluster data from Seurat objects
+control_metadata <- FetchData(control_obj, vars = c("condition", "seurat_clusters"))
+aged_metadata <- FetchData(aged_obj, vars = c("condition", "seurat_clusters"))
+
+# Tabulate cluster counts
+control_cluster_counts <- as.data.frame(table(control_metadata$seurat_clusters))
+aged_cluster_counts <- as.data.frame(table(aged_metadata$seurat_clusters))
+
+# Combine cluster counts
+cluster_counts <- left_join(control_cluster_counts, aged_cluster_counts, by = "Var1")
+colnames(cluster_counts) <- c("Cluster", "Control", "Aged")
+cluster_counts
+```
+
+### Find integration anchors
+```{r integration_anchors}
+# Edit globals because we need these for some reason
+options(future.globals.maxSize = 16000 * 1024^2)
+object_list <- list(Control = control_obj, Aged = aged_obj)
+common_features <- SelectIntegrationFeatures(object.list = object_list, nfeatures = 3000)
+object_list <- PrepSCTIntegration(object.list = object_list, anchor.features = common_features, verbose = FALSE)
+object_anchors <- FindIntegrationAnchors(object.list = object_list, normalization.method = "SCT", anchor.features = common_features, verbose = FALSE)
+seurat_obj <- IntegrateData(anchorset = object_anchors, normalization.method = "SCT", verbose = FALSE)
+```
+
+### Review integrated anchors
+```{r check_integration}
+# Dimensionality reduction
+seurat_obj <- RunPCA(seurat_obj, verbose = FALSE)
+seurat_obj <- RunUMAP(seurat_obj, dims = 1:30)
+
+# Generate UMAP plots and label by cluster and condition to ensure
+# integration hasn't introduced any batch effects
+
+plots <- DimPlot(seurat_obj, group.by = c("cluster", "condition"), combine = FALSE)
+plots <- lapply(X = plots, FUN = function(x) x + theme(legend.position = "top") + guides(color = guide_legend(nrow = 3, 
+    byrow = TRUE, override.aes = list(size = 2))))
+
+CombinePlots(plots)
+```
+
+### Metaneighbor Analysis
+Metaneighbor identifies closeness of clusters based on variable genes. 
+Theoretically, markers from one dataset can be used to identify markers in
+other datasets.
+
+```{r metaneighbor}
+library(MetaNeighbor)
+library(SingleCellExperiment)
+# Prepare data for conversion to SingleCellExperiment
+metadata <- FetchData(seurat_obj, vars = c("orig.ident", "condition", "seurat_clusters"))
+metadata$cluster <- paste0(metadata$condition, "_", metadata$seurat_clusters)
+seurat_obj[["cluster"]] <- metadata$cluster
+sce_obj <- as.SingleCellExperiment(seurat_obj)
+
+# Run unsupervised metaneighbor based on top variable genes
+variable_genes <- variableGenes(sce_obj, exp_labels = sce_obj$condition)
+celltype_nv = MetaNeighborUS(var_genes = variable_genes,
+dat = sce_obj,
+study_id = sce_obj$condition,
+cell_type = sce_obj$seurat_clusters, fast_version = TRUE)
+
+# Plot metaneighbor AUC values as a heatmap
+cols = rev(colorRampPalette(RColorBrewer::brewer.pal(11,"RdYlBu"))(100))
+breaks = seq(0, 1, length=101)
+gplots::heatmap.2(celltype_nv,
+keysize=1,
+key.xlab="AUROC",
+key.title="NULL",
+trace = "none",
+density.info = "none",
+col = cols,
+breaks = breaks,
+offsetRow=0.1,
+offsetCol=0.1,
+cexRow = 0.7,
+cexCol = 0.7)
+
+# Integrate clusters
+celltype_df <- as.data.frame(celltype_nv)
+celltype_df$ref_cluster <- rownames(celltype_df)
+celltype_df <- celltype_df %>% gather(cluster, AUROC, -ref_cluster)
+
+# Remove equal clusters
+diff_clusters <- subset(celltype_df, celltype_df$ref_cluster != celltype_df$cluster)
+
+# Separate clusters
+diff_clusters <- subset(diff_clusters, startsWith(diff_clusters$ref_cluster, "Control"))
+diff_clusters <- subset(diff_clusters, startsWith(diff_clusters$cluster, "Aged"))
+
+# Select clusters that have AUROC of 0.9
+top_hits = topHits(cell_NV = celltype_nv,
+dat = sce_obj,
+study_id = sce_obj$condition,
+cell_type = sce_obj$seurat_clusters,
+threshold = 0.9)
+metadata$seurat_clusters[which(metadata$seurat_clusters )]
+top_hits <- subset(top_hits, top_hits$Match_type == "Reciprocal_top_hit")
+top_hits$Common <- 1:nrow(top_hits)
+colnames(top_hits) <- c("Control", "Aged", "Mean_AUROC", "Match_type")
+top_hits$Control <- gsub("^Control[|]", "", top_hits$Control)
+top_hits$Aged <- gsub("^Aged[|]", "", top_hits$Aged)
+
+```
+
+# Generate new cluster labels
+```{r labelClusters}
+# Extract metadata
+metadata <- FetchData(seurat_obj, vars = c("condition", "seurat_clusters"))
+metadata[1:10, ]
+
+# Need to tally cell counts so we can figure out which cluster is the largest,
+# and then count them accordingly
+countCommonClusterCells <- function(x){
+  control_count <- nrow(metadata[which(metadata$condition == "Control" & metadata$seurat_clusters == x[["Control"]]), ])
+  aged_count <- nrow(metadata[which(metadata$condition == "Aged" & metadata$seurat_clusters == x[["Aged"]]), ])
+  return(control_count + aged_count)
+}
+
+common_cluster_counts <- apply(top_hits, 1, countCommonClusterCells)
+top_hits$Counts <- common_cluster_counts
+top_hits <- top_hits[order(top_hits$Counts, decreasing = TRUE), ]
+top_hits$Common <- 1:nrow(top_hits)
+
+# Add column
+metadata$cluster <- "Common_0"
+
+# Assign clusters for each row
+for (n in 1:nrow(top_hits)){
+  x <- top_hits[n, ]
+  control_cluster <- x$Control
+  aged_cluster <- x$Aged
+  new_cluster <- paste0("Common_", x$Common)
+
+  metadata[which(metadata$condition == "Control" & metadata$seurat_clusters == control_cluster), "cluster"] <- new_cluster
+  metadata[which(metadata$condition == "Aged" & metadata$seurat_clusters == aged_cluster), "cluster"] <- new_cluster
+}
+
+# If cluster == Common_0, create alternative labels
+exclusive_clusters <- subset(metadata, metadata$cluster == "Common_0")
+
+# Count clusters by condition
+unique_cluster_counts <- exclusive_clusters %>% group_by(condition, seurat_clusters) %>% summarize(Counts = n())
+
+# Preserve cluster 0
+unique_cluster_counts$cluster <- NULL
+
+# Combine the rest
+aged_row_count <- 0
+control_row_count <- 0
+
+# Count the number of cells per cluster, so we can number them from
+# largest to smallest
+for(row in 1:nrow(unique_cluster_counts)){
+    x <- unique_cluster_counts[row, ]
+    if (x[["condition"]] == "Control"){
+        unique_cluster_counts[row, "cluster"] <- control_row_count
+        control_row_count = control_row_count + 1
+    } else if(x[["condition"]] == "Aged"){
+        unique_cluster_counts[row, "cluster"] <- aged_row_count
+        aged_row_count = aged_row_count + 1
+    }
+}
+
+for (n in 1:nrow(unique_cluster_counts)){
+  x <- unique_cluster_counts[n, ]
+  metadata[which(metadata$condition ==  x[["condition"]] & metadata$seurat_clusters == x[["seurat_clusters"]]), "cluster"] <- paste0(x[["condition"]], "_", x[["cluster"]])
+}
+
+# Final cluster counts
+cluster_counts <- as.data.frame(table(metadata$cluster))
+colnames(cluster_counts) <- c("Cluster", "Cells")
+write.csv(cluster_counts, "POAG_scRNA_IntegratedClusterCounts.csv", row.names = FALSE)
+
+seurat_obj[["cluster"]] <- metadata$cluster
+Idents(seurat_obj) <- "cluster"
+
+```
+
+## Cluster characterisation
+
+```{r identifyConservedMarkers}
+integrated_markers <- FindAllMarkers(seurat_obj, test.use = "bimod")
+conserved_markers1 <- FindConservedMarkers(seurat_obj, ident.1 = "Common_1", grouping.var = "condition", verbose = FALSE)
+
+conserved_markers2 <- FindConservedMarkers(seurat_obj, ident.1 = "Common_2", grouping.var = "condition", verbose = FALSE)
+
+conserved_markers3 <- FindConservedMarkers(seurat_obj, ident.1 = "Common_3", grouping.var = "condition", verbose = FALSE)
+
+conserved_markers4 <- FindConservedMarkers(seurat_obj, ident.1 = "Common_4", grouping.var = "condition", verbose = FALSE)
+
+conserved_markers5 <- FindConservedMarkers(seurat_obj, ident.1 = "Common_5", grouping.var = "condition", verbose = FALSE)
+
+conserved_markers6 <- FindConservedMarkers(seurat_obj, ident.1 = "Common_6", grouping.var = "condition", verbose = FALSE)
+
+```

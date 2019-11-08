@@ -1,0 +1,25 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1573187092048.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1382634749",
+    "id" : "54326B8",
+    "lastKnownWriteTime" : 1573187441,
+    "last_content_update" : 1573187441479,
+    "path" : "~/Repositories/RPE_scRNA_AgedStudy/analysis/H9_RPE_AGED.Rmd",
+    "project_path" : "analysis/H9_RPE_AGED.Rmd",
+    "properties" : {
+        "cursorPosition" : "149,16",
+        "scrollLine" : "146"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}
