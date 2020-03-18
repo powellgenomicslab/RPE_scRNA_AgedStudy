@@ -40,5 +40,7 @@ The SGE script [runCellRangerCount.sge](processing/runCellRangerCount.sge) can a
 ### Dataset integration
 - [H9_RPE_Integration.Rmd](analysis/H9_RPE_Integration.Rmd)
 
+### Trajectory Analysis
+- [H9_RPE_Pseudotime.Rmd](analysis/H9_RPE_Pseudotime.Rmd)
 
 

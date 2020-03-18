@@ -1,3 +1,0 @@
-"0","# Retrieve values to plot from the Seurat object"
-"0","metadata <- seurat_obj@meta.data"
-"0","print(metadata[1:10,])"

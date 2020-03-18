@@ -1,0 +1,211 @@
+---
+title: "Trajectory analysis of H9 RPE samples"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Monocle3 Analysis of integrated H9 RPE samples
+### R Environment Setup
+```{r}
+library(Seurat)
+library(monocle3)
+library(SingleCellExperiment)
+library(tidyverse)
+library(ggpubr)
+```
+
+### Loading input files
+```{r extractMonocle3}
+# Load integrated object
+seurat_obj <- readRDS("/Volumes/LACIE/RPE_scRNA/PUBLISHED/H9_RPE_IntegratedObject.rds")
+
+# Load colours for clusters
+colour_df <- read_csv("~/Documents/Experiments/RPE_scRNA/Analysis/RevisedAnalysis/cluster_colours.csv")
+colour_vec <- as.character(colour_df$Colour)
+names(colour_vec) <- as.character(colour_df$Cluster)
+```
+
+### Building Monocle 3 from Seurat object
+```{r extractData}
+# Retrieve residuals from integrated slot
+counts <- seurat_obj[["integrated"]]@scale.data
+
+# Retrieve metadata 
+metadata <- FetchData(seurat_obj, c("condition", "Months", "cluster", 
+                                    "seurat_clusters",
+                                     "nCount_RNA", 
+                                    "nFeature_RNA", 
+                                    "percent.mt", 
+                                    "percent.rb"))
+colnames(metadata)[3] <- "cluster_identity"
+
+# Create gene dataframe
+gene_annotation <- data.frame(gene_short_name = rownames(counts), 
+                              num_cells_expressed = 
+                                Matrix::rowSums(counts > 0), 
+                              row.names = rownames(counts))
+
+# Create CDS monocle object
+cds <- new_cell_data_set(counts,
+                         cell_metadata = metadata,
+                         gene_metadata = gene_annotation)
+```
+
+As this is scRNA-seq, we will use PCA to reduce the dimensionality of the data.
+We will use 30 dimensions, as used in previous analyses. Note that as we are 
+using residuals, normalization and scaling is not necessary.
+
+```{r dimreduction, fig.width = 7}
+cds <- preprocess_cds(cds, num_dim = 30, norm_method = "none", scaling = FALSE)
+plot_pc_variance_explained(cds)
+```
+
+We are bypassing the `align_cds` step as we are using harmonized Pearson 
+residuals from the Seurat workflow. The PCA-reduced data is reduced further
+for plotting, using UMAP.
+
+```{r run_umap, fig.width = 7}
+cds <- reduce_dimension(cds, max_components = 2, reduction_method = "UMAP",
+                        cores = 1, preprocess_method = "PCA", verbose = FALSE)
+plot_cells(cds, reduction_method = "UMAP", 
+           color_cells_by = "Months", 
+           show_trajectory_graph = FALSE) +
+          scale_color_manual(name = "Months", values = c("1" = "#e71837",
+                                                 "12" = "#00674f")) +
+          ggtitle("Timepoint", subtitle = "Monocle 3 UMAP")
+```
+
+Perform clustering and learn the trajectory on the resulting UMAP projection.
+
+```{r cluster_cells, fig.width = 7}
+cds <- cluster_cells(cds)
+cds <- learn_graph(cds)
+
+cluster_monocle <- plot_cells(cds, reduction_method = "UMAP", 
+           color_cells_by = "cluster", 
+           show_trajectory_graph = TRUE) +
+  ggtitle("Monocle 3 Clusters", subtitle = "Monocle 3 Trajectory Analysis")
+
+
+partition_monocle <- plot_cells(cds, reduction = "UMAP",
+                             color_cells_by = "partition",
+                             show_trajectory_graph = TRUE) +
+  ggtitle("Partitions", subtitle = "Monocle 3 Trajectory Analysis")
+
+cluster_seurat <- plot_cells(cds, reduction = "UMAP",
+                             color_cells_by = "cluster_identity",
+                             show_trajectory_graph = TRUE) +
+    scale_colour_manual(name = "Cluster", values = colour_vec) +
+  ggtitle("Clusters", subtitle = "Monocle 3 Trajectory Analysis")
+
+ggarrange(cluster_monocle, partition_monocle, cluster_seurat, ncol = 3)
+```
+
+The analysis shows a branching trajectory.
+
+From previous analyses, we know proliferative cells are still present in the
+population. We can use these as a starting point for the trajectory.
+
+```{r ki67, fig.width = 7}
+proliferative_genes <- c("MKI67", "TOP2A", "TPX2", "PTTG1", "PCLAF", "RRM2")
+proliferative_monocle_umap <- plot_cells(cds, genes = proliferative_genes,
+                                         show_trajectory_graph= TRUE,
+                                         label_branch_points = FALSE, 
+                                         label_leaves = FALSE,
+                                         label_roots = FALSE,
+                                         label_cell_groups=FALSE,
+                                         label_groups_by_cluster = FALSE)
+proliferative_monocle_umap
+```
+
+To calculate pseudotime values, we will set the root of the tree at the point
+closest to the proliferative cells. THis is done via a shiny app, so we will not
+run this chunk.
+
+```{r calcPseudotime, eval = FALSE}
+# Use shiny app to select node closest to proliferative cells
+cds <- order_cells(cds)
+```
+
+We can then review the pseudotime values.
+```{r show_pseudotime}
+cds <- readRDS("/Volumes/LACIE/RPE_scRNA/PUBLISHED/H9_RPE_Residual_Monocle3_Object.rds")
+
+# Plot pseudotime values over UMAP
+pseudotime_plot <- plot_cells(cds, color_cells_by = "pseudotime",
+                           show_trajectory_graph = TRUE,
+                           label_cell_groups = FALSE,
+                           label_leaves = FALSE,
+                           label_branch_points = FALSE,
+                           label_roots = FALSE) +
+  ggtitle("Clusters", subtitle = "Monocle 3 Trajectory Analysis")
+
+pseudotime_plot
+```
+
+To identify genes that change as a function of pseudotime, we will perform
+the Moran I's test via the `graph_test` function. 
+
+```{r graph_test_show, eval = FALSE}
+trajectory_pr_test_df <- graph_test(cds, 
+                                   neighbor_graph="principal_graph", 
+                                   cores=4)
+trjaectory_pr_test_df <- trajectory_pr_test_df %>% 
+  rownames_to_column(var = "gene_id")
+trajectory_pr_de_genes_df <- trjaectory_pr_test_df %>% filter(q_value < 0.05)
+trajectory_pr_de_genes_df <- trajectory_pr_de_genes_df %>% 
+  arrange(desc(abs(morans_I))) %>%
+  dplyr::select(gene_id, gene_short_name, status, everything())
+```
+
+```{r graph_test, include = FALSE}
+trajectory_pr_test_df <- graph_test(cds, 
+                                   neighbor_graph="principal_graph", 
+                                   cores=4)
+trjaectory_pr_test_df <- trajectory_pr_test_df %>% 
+  rownames_to_column(var = "gene_id")
+trajectory_pr_de_genes_df <- trjaectory_pr_test_df %>% filter(q_value < 0.05)
+trajectory_pr_de_genes_df <- trajectory_pr_de_genes_df %>% 
+  arrange(desc(abs(morans_I))) %>%
+  dplyr::select(gene_id, gene_short_name, status, everything())
+```
+
+```{r print_results}
+trajectory_pr_de_genes_df
+```
+
+Using significant genes (FDR < 0.05), we identified co-expression modules at 
+multiple resolutions. The function will select the most stable result.
+
+```{r coexpression_modules}
+gene_module_df <- find_gene_modules(cds[trajectory_pr_de_genes_df$gene_id,], 
+                                    reduction_method = "UMAP", 
+                                    random_seed = 1, cores = 3, 
+                                    resolution = 10^seq(-6, -1))
+gene_module_df <- gene_module_df %>% arrange(supermodule, module)
+gene_module_df
+```
+
+We will review how these modules relate to each cluster by generating a heatmap.
+
+```{r heatmap, fig.width = 7}
+cell_group_df <- tibble::tibble(cell = rownames(colData(cds)),
+                                cell_group = colData(cds)$cluster_identity)
+
+agg_mat <- aggregate_gene_expression(cds, gene_module_df, cell_group_df)
+row.names(agg_mat) <- stringr::str_c("Module ", row.names(agg_mat))
+
+agg_mat <- as.matrix(agg_mat)
+agg_mat <- scale(agg_mat)
+
+cols = rev(colorRampPalette(RColorBrewer::brewer.pal(11,"RdYlBu"))(100))
+breaks = seq(0, 1, length=101)
+
+library(ComplexHeatmap)
+heatmap <- Heatmap(agg_mat, 
+                   cluster_rows = function(m) hclust(dist(agg_mat), method = "ward.D2"),
+                   row_names_gp = gpar(fontsize = 8),
+                   col = cols)
+heatmap
+```
